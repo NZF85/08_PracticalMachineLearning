@@ -1,0 +1,116 @@
+Practical Machine Learning Course Project
+========================================================
+
+Introduction
+-------------------------------
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal is  to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here:  [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har).
+
+
+Loading data
+-------------------------------
+The list of libraries that are needed for this assignment are loaded first.
+```{r, message=F, warning=F}
+library(caret)
+library(randomForest)
+library(ggplot2)
+library(lattice)
+library(kernlab)
+library(rpart) 
+library(rpart.plot) 
+library(doParallel)
+```
+
+The training data for this project are available   [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and the tests data [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) 
+
+After downloading into the working directory, the following code loads them in *training* and *test*. 
+
+```{r}
+set.seed(1234)
+# Setworking directory
+# Some missing values are coded as string "#DIV/0!" or "" or "NA" - these will be changed to NA.
+# Both data sets contain columns with all missing values - these will be deleted.  
+training <- read.csv('pml-training.csv')
+testing <- read.csv('pml-testing.csv')
+#count the number of nas per column, the "2" in apply looks at the columns
+#remove columns with over a 90% of not a number
+nasPerColumn<- apply(training,2,function(x) {sum(is.na(x))});
+training <- training[,which(nasPerColumn <  nrow(training)*0.9)]; 
+```
+
+Cleaning data 
+-------------------------------
+Data cleaning is performed before building the prediction model
+- Removing columns with over a 90% of not a number
+- Removing near zero variance predictors
+- remove not relevant columns for classification (x, user name, raw time stamp 1 and 2, new window and num window).
+- Convert class into factor
+
+```{r}
+#remove near zero variance predictors
+nearZeroColumns <- nearZeroVar(training, saveMetrics = TRUE)
+training <- training[, nearZeroColumns$nzv==FALSE]
+
+#remove not relevant columns for classification (x, user_name, raw time stamp 1  and 2, "new_window" and "num_window")
+training<-training[,7:ncol(training)]
+
+#class into factor
+training$classe <- factor(training$classe)
+```
+
+
+Training and Test Sets
+-------------------------------
+The Data is splitted as follows: 60% for training, 40% for testing
+
+```{r}
+trainIndex <- createDataPartition(y = training$classe, p=0.6,list=FALSE);
+trainingPartition <- training[trainIndex,];
+testingPartition <- training[-trainIndex,];
+```
+
+Create machine learning models
+-------------------------------
+We will use random forest as our model as implemented in the randomForest package.
+To improve the model obtained and more specifically to avoid over-fitting, the cross validation technique is employed with 10 folds.
+
+
+```{r, eval=FALSE}
+#parallel computing for multi-core
+registerDoParallel(makeCluster(detectCores()))  
+controlf <- trainControl(method = "repeatedcv", number = 10, repeats = 10)
+model_rf <- train(classe ~ ., method="rf",  data=trainingPartition, trControl = controlf)
+```
+
+Model Accuracy
+-------------------------------
+After using the testing data to make predictions with the models calculated and showing the confusion matrix for the model, the random forest model after cross validation gave an output of 99.07%
+ 
+
+```{r, eval=FALSE}
+print("Random forest accuracy ")
+rf_accuracy<- predict(model_rf, testingPartition)
+print(confusionMatrix(rf_accuracy, testingPartition$classe))
+
+```
+
+Test set prediction
+-------------------------------
+The prediction of our algorithm for the test set is:
+
+```{r, eval=FALSE}
+ptest <- predict(model_rf, testing)
+
+answers <- as.vector(ptest)
+
+pml_write_files = function(x) {
+  n = length(x)
+  for (i in 1:n) {
+    filename = paste0("problem_id_", i, ".txt")
+    write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, 
+                col.names = FALSE)
+  }
+}
+
+pml_write_files(answers)
+
+```
